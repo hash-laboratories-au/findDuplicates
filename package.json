@@ -1,0 +1,23 @@
+{
+  "name": "findduplicates",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hash-laboratories-au/findDuplicates.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hash-laboratories-au/findDuplicates/issues"
+  },
+  "homepage": "https://github.com/hash-laboratories-au/findDuplicates#readme",
+  "dependencies": {
+    "axios": "^0.27.2",
+    "path": "^0.12.7"
+  }
+}
