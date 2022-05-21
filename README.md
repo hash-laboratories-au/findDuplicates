@@ -19,9 +19,3 @@ To find a transaction with to address "xdc00000000000000000000000000000000000000
 NOTE: I only wrote for `to` address of `xdc0000000000000000000000000000000000000092`. This may also works for below `to` addresses if there are any duplicates. (Duplicates shall only exist within same `to`)
 - xdc0000000000000000000000000000000000000092
 - xdc0000000000000000000000000000000000000094
-
-
-## What is `blockDecoder` file
-This file takes input of a stringified json block, return its block miner address. See the example in the `downloadBlocks.js` from line 56-64.
-
-The file is a complied `go` file where we used some of the existing XinFin code to decode its encoded byte data. I copied the source code into the `blockDecoderSource.go` file. But this file can only be run within the Xinfin repo https://github.com/XinFinOrg/XDPoSChain.

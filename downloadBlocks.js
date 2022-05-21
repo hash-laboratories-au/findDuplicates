@@ -3,8 +3,10 @@ const fs = require('fs');
 const path = require("path");
 const Axios = require("axios");
 const util = require('util');
+const ethUtils = require('ethereumjs-util');
+const BlockHeader = require('ethereumjs-block/header');
 
-const PARALLEL_REQUEST = 10;
+const PARALLEL_REQUEST = 100;
 
 const axios = Axios.create({
   baseURL: "https://mnrpc.xinfin.network",
@@ -49,21 +51,13 @@ const getBlockByNumber = async(blockNum) => {
     data: JSON.stringify({"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":[`0x${blockNum}`,true],"id":1})
   }
   const data = await axiosClient(config, 'block');
-
-  const blockJson = convertFieldToInt(['nonce', 'gasUsed', 'difficulty', 'number', 'size', 'timestamp', 'totalDifficulty', 'gasLimit'], data.result);
-  // Assign one processor to run the binary go file
-  const exec = util.promisify(require('child_process').exec);
-  const {stdout, stderr} = await exec(`./blockDecoder '${JSON.stringify(blockJson)}'`);
   
-  if (stderr) {
-    console.log('Failed to get miner and validator address: ', stderr);
-  }
-  const reverseEngineeringData = stdout.split('\n');
+  const {minerAddress, signerAddress }= await getM1M2(data.result);
+  const blockJson = convertFieldToInt(['nonce', 'gasUsed', 'difficulty', 'number', 'size', 'timestamp', 'totalDifficulty', 'gasLimit'], data.result);
   return {
     ...blockJson,
-    minerAddress: reverseEngineeringData[0].toLowerCase(),
-    validatorAddress: reverseEngineeringData[1].toLowerCase(),
-    validatorMapping: reverseEngineeringData[2].split(' ').join(",")
+    minerAddress,
+    validatorAddress: signerAddress
   }
 }
 
@@ -71,7 +65,7 @@ const gettingBlockData = async (blockNumber) => {
   console.log(`getting block ${blockNumber}`);
   const hexNum = blockNumber.toString(16);
   // Block information
-  const [{ hash, extraData, number, parentHash, transactions, minerAddress}] = await Promise.all([getBlockByNumber(hexNum)])
+  const [{ hash, number, parentHash, transactions, minerAddress}] = await Promise.all([getBlockByNumber(hexNum)])
 
   return {
     transactions,
@@ -83,7 +77,6 @@ const gettingBlockData = async (blockNumber) => {
 
 const main = async (start, end, fileName) => {
   const blocksMap = {};
-  // const blocks = [];
   
   // Load the very last block for calculating the time to mine
   blocksMap[start - 1] = await gettingBlockData(start - 1);
@@ -118,3 +111,51 @@ const fileName = process.env.OUTPUTFILE || 'output'
 console.log(`Fetching block from ${start} to ${end} and write to in /output/${fileName}.json`)
 
 main(parseInt(start), parseInt(end), fileName).then(() => process.exit()).catch(e => console.log(e));
+
+
+const getM1M2= async(block) =>{
+  const dataBuff = ethUtils.toBuffer(block.extraData)
+
+  const sig = ethUtils.fromRpcSig(dataBuff.slice(dataBuff.length - 65, dataBuff.length))
+  block.extraData = '0x' + ethUtils.toBuffer(block.extraData).slice(0, dataBuff.length - 65).toString('hex')
+  
+  block.miner = '0x'+block.miner.substring(3)
+  
+  const headerHash = new BlockHeader({
+      parentHash: ethUtils.toBuffer(block.parentHash),
+      uncleHash: ethUtils.toBuffer(block.sha3Uncles),
+      coinbase: ethUtils.toBuffer(block.miner),
+      stateRoot: ethUtils.toBuffer(block.stateRoot),
+      transactionsTrie: ethUtils.toBuffer(block.transactionsRoot),
+      receiptTrie: ethUtils.toBuffer(block.receiptsRoot),
+      bloom: ethUtils.toBuffer(block.logsBloom),
+      difficulty: ethUtils.toBuffer(parseInt(block.difficulty)),
+      number: ethUtils.toBuffer(block.number),
+      gasLimit: ethUtils.toBuffer(block.gasLimit),
+      gasUsed: ethUtils.toBuffer(block.gasUsed),
+      timestamp: ethUtils.toBuffer(block.timestamp),
+      extraData: ethUtils.toBuffer(block.extraData),
+      mixHash: ethUtils.toBuffer(block.mixHash),
+      nonce: ethUtils.toBuffer(block.nonce)
+  })
+  // console.log('block.headerHash', headerHash)
+  const pub = ethUtils.ecrecover(headerHash.hash(), sig.v, sig.r, sig.s)
+  // console.log('block.pub', pub)
+  let m1 = ethUtils.addHexPrefix(ethUtils.pubToAddress(pub).toString('hex'))
+  m1 = m1.toLowerCase()
+  let m2
+  try {
+      const dataBuffM2 = ethUtils.toBuffer(block.validator)
+      const sigM2 = ethUtils.fromRpcSig(dataBuffM2.slice(dataBuffM2.length - 65, dataBuffM2.length))
+      const pubM2 = ethUtils.ecrecover(headerHash.hash(), sigM2.v, sigM2.r, sigM2.s)
+      m2 = ethUtils.addHexPrefix(ethUtils.pubToAddress(pubM2).toString('hex'))
+      m2 = m2.toLowerCase()
+  } catch (e) {
+      logger.warn('Cannot get m2 of block %s. Error %s', block.number, e)
+      m2 = 'N/A'
+  }
+  
+  const minerAddress = `xdc${m1.slice(2)}`
+  const signerAddress = `xdc${m2.slice(2)}`
+  return { minerAddress, signerAddress }
+}
