@@ -1,6 +1,6 @@
 var fs = require('fs');
 
-const fileName = process.env.FILENAME
+const fileName = process.env.FILENAME || 'output'
 if (!fileName) {
   console.log("Please provide a FILENAME name")
   exit(1)
