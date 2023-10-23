@@ -16,14 +16,13 @@ blockList.forEach(block => {
   block.transactions.forEach(transaction => {
     const transactionFromAddress = transaction.from
     // Duplicates need to satisfy below condition
-    if (transaction.to == "xdc0000000000000000000000000000000000000092" && transactionFromAddress == minerAddress)  {
+    if ((transaction.to == "xdc0000000000000000000000000000000000000092" || transaction.to == "xdc0000000000000000000000000000000000000094") && transactionFromAddress == minerAddress)  {
       // Set the state belong to this address if not exist
       const previousState = allMinerStateMap[minerAddress];
       
-      
       if (previousState && previousState.nonce == transaction.nonce && previousState.input == transaction.input) {
         // The duplicates
-        console.log(`Found duplicated transaction hash: ${transaction.hash} at block number ${block.number}`) 
+        console.log(`Found duplicated transaction hash: ${transaction.hash} at block number ${block.number} with minerAddress ${minerAddress}`) 
       } else {
         allMinerStateMap[minerAddress] = {
           nonce: transaction.nonce,

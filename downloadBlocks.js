@@ -7,9 +7,10 @@ const ethUtils = require('ethereumjs-util');
 const BlockHeader = require('ethereumjs-block/header');
 
 const PARALLEL_REQUEST = 100;
+const SWITCH_BLOCK = 7074000;
 
 const axios = Axios.create({
-  baseURL: "https://mnrpc.xinfin.network",
+  baseURL: "http://194.233.77.19:8545/",
   headers: {'content-type': 'application/json'},
   timeout: 60000,
 })
@@ -52,26 +53,88 @@ const getBlockByNumber = async(blockNum) => {
   }
   const data = await axiosClient(config, 'block');
   
-  const {minerAddress, signerAddress }= await getM1M2(data.result);
+  let minerAddress = data.result.miner;
+  if (parseInt(blockNum, 16) <= SWITCH_BLOCK) {
+    // const {minerAddress, signerAddress }= await getM1M2(data.result);
+    minerAddress = (await getM1M2(data.result)).minerAddress;
+  }
   const blockJson = convertFieldToInt(['nonce', 'gasUsed', 'difficulty', 'number', 'size', 'timestamp', 'totalDifficulty', 'gasLimit'], data.result);
   return {
     ...blockJson,
     minerAddress,
-    validatorAddress: signerAddress
+    // validatorAddress: signerAddress
   }
+}
+const getMinersListFromExtradata = (extraData) => {
+  let masterNodeString = extraData.substring(66, extraData.length-130);
+
+  const numberOfMiners = Math.floor(masterNodeString.length/40);
+  const miners = [];
+  for (let index = 0; index < numberOfMiners; index++) {
+    miners.push(masterNodeString.substring(0, 40));
+    masterNodeString = masterNodeString.substring(40);
+  }
+  return miners;
+}
+
+const getPenaltiesMinersListFromPenalties = (penalties) => {
+  let masterNodeString = penalties.substring(2, penalties.length); //delete 0x prefix
+  const numberOfMiners = Math.floor(masterNodeString.length/40);
+  const miners = [];
+  for (let index = 0; index < numberOfMiners; index++) {
+    miners.push({
+      index,
+      minerAddress: masterNodeString.substring(0, 40)
+    });
+    masterNodeString = masterNodeString.substring(40);
+  }
+  return miners;
+}
+
+function chunkSubstr(str, size) {
+  const numChunks = Math.ceil(str.length / size)
+  const chunks = new Array(numChunks)
+
+  for (let i = 0, o = 0; i < numChunks; ++i, o += size) {
+    chunks[i] = str.substr(o, size)
+  }
+  return chunks
+}
+
+const getMasterNodesFromValidators = (validators) => {
+  const addressLength = 40;
+  return chunkSubstr(validators.substring(2), 40)
 }
 
 const gettingBlockData = async (blockNumber) => {
   console.log(`getting block ${blockNumber}`);
   const hexNum = blockNumber.toString(16);
+  let orderedMinerList = [];
+  let penaltyMiners = [];
+  
   // Block information
-  const [{ hash, number, parentHash, transactions, minerAddress}] = await Promise.all([getBlockByNumber(hexNum)])
-
+  const [{ hash, number, parentHash, transactions, minerAddress, size, timestamp, penalties, extraData, validators}] = await Promise.all([getBlockByNumber(hexNum)])
+  
+  if (blockNumber <= blockNumber) {
+    if (!(number % 900)) {
+      // It's an epoch 0 block, we need to decode more data
+      orderedMinerList = getMinersListFromExtradata(extraData);
+      penaltyMiners = getPenaltiesMinersListFromPenalties(penalties);
+    }
+  } else {
+    // V2
+    orderedMinerList = getMasterNodesFromValidators(validators)
+    penaltyMiners = getPenaltiesMinersListFromPenalties(penalties);
+  }
+  
+  // Check if it's an epoch 0 block
+  
   return {
-    transactions,
+    // transactions,
     hash, number,
     parentHash,
     minerAddress,
+    size, timestamp, orderedMinerList, penaltyMiners
   }
 }
 
@@ -82,12 +145,14 @@ const main = async (start, end, fileName) => {
   blocksMap[start - 1] = await gettingBlockData(start - 1);
   // Start batch of PARALLEL_REQUEST
   for (let i = start; i < end; i = i+PARALLEL_REQUEST) {
+    if (i > end) break
     const promises = [];
     let finalBlockNum = i+PARALLEL_REQUEST;
     if (finalBlockNum > end) {
       finalBlockNum = end
     }
     for (let j = i; j < finalBlockNum; j++) {
+      if (j > end) break
       promises.push(gettingBlockData(j));
     }
     const tenBlocks = await Promise.all(promises);
@@ -138,7 +203,8 @@ const getM1M2= async(block) =>{
       mixHash: ethUtils.toBuffer(block.mixHash),
       nonce: ethUtils.toBuffer(block.nonce)
   })
-  // console.log('block.headerHash', headerHash)
+  // console.log('block.headerHash', headerHash.hash())
+  // console.log(JSON.stringify(sig))
   const pub = ethUtils.ecrecover(headerHash.hash(), sig.v, sig.r, sig.s)
   // console.log('block.pub', pub)
   let m1 = ethUtils.addHexPrefix(ethUtils.pubToAddress(pub).toString('hex'))
